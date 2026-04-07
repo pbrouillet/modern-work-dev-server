@@ -1,0 +1,33 @@
+# Azure / AZD
+.azure/
+.env
+
+# Build outputs
+bin/
+obj/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# IDE
+.vs/
+*.suo
+*.user
+*.sln.docstates
+
+# Logs
+*.log
+
+# Temp installer files (local only)
+installers/
+isos/
+*.iso
+
+*.rdp
+**/target
+
+infra/**/main.json
+infra/**/main.parameters.json
+infra/**/main.test.json
+**/serials.json

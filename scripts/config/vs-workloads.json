@@ -1,0 +1,22 @@
+{
+  "bootstrapperUrls": {
+    "release": "https://aka.ms/vs/18/release/vs_enterprise.exe",
+    "preview": "https://aka.ms/vs/18/pre/vs_enterprise.exe",
+    "note": "Channel numbers are hypothetical for VS 2026. Update when actual URLs are known."
+  },
+  "workloads": [
+    "Microsoft.VisualStudio.Workload.Office",
+    "Microsoft.VisualStudio.Workload.ManagedDesktop",
+    "Microsoft.VisualStudio.Workload.NetWeb"
+  ],
+  "components": [
+    "Microsoft.Component.NetFX.Native",
+    "Microsoft.VisualStudio.Component.SharePoint.Tools"
+  ],
+  "installOptions": {
+    "quiet": true,
+    "norestart": true,
+    "wait": true,
+    "includeRecommended": true
+  }
+}

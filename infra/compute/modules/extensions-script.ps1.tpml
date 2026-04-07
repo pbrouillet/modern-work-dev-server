@@ -1,0 +1,45 @@
+$ProgressPreference='SilentlyContinue';
+$sa='__STORAGE_ACCOUNT_NAME__';
+$suffix='__STORAGE_SUFFIX__';
+$root='C:\Installs';
+$blobUrl='https://'+$sa+'.blob.'+$suffix;
+New-Item -ItemType Directory -Path $root -Force|Out-Null;
+
+Write-Host 'Downloading azcopy...';
+$azDir=Join-Path $env:TEMP 'azcopy';
+New-Item -ItemType Directory -Path $azDir -Force|Out-Null;
+$zipPath=Join-Path $env:TEMP 'azcopy.zip';
+
+Invoke-WebRequest -Uri 'https://aka.ms/downloadazcopy-v10-windows' -OutFile $zipPath -UseBasicParsing;
+Expand-Archive -Path $zipPath -DestinationPath $azDir -Force;
+$azcopy=(Get-ChildItem -Path $azDir -Recurse -Filter 'azcopy.exe'|Select-Object -First 1).FullName;
+
+Write-Host('azcopy found at: '+$azcopy);
+Write-Host 'Logging in with managed identity...';
+
+$env:AZCOPY_AUTO_LOGIN_TYPE='MSI';
+$srcScripts=$blobUrl+'/scripts/*';
+$destScripts=Join-Path $root '';
+Write-Host('Copying scripts from '+$srcScripts+' to '+$destScripts);
+$out=& $azcopy copy $srcScripts $destScripts --recursive --log-level=WARNING 2>&1|Out-String;
+
+Write-Host $out;
+if($LASTEXITCODE-ne0) {
+    Write-Host 'WARNING: azcopy scripts copy failed, scripts may not be available'
+}
+
+$params=@{
+    IsoBlobUrl=($blobUrl+'/isos');
+    SqlIsoFileName='__SQL_ISO_FILENAME__';
+    SpIsoFileName='__SP_ISO_FILENAME__';
+    DomainAdminPassword='__DOMAIN_ADMIN_PASSWORD__';
+    SpFarmPassphrase='__SP_FARM_PASSPHRASE__';
+    StorageAccountName=$sa;
+    BlobBaseUrl=$blobUrl;
+    EnableExchange='__ENABLE_EXCHANGE__';
+    ExchangeIsoFileName='__EXCHANGE_ISO_FILENAME__'
+} | ConvertTo-Json -Depth 5;
+
+Set-Content -Path (Join-Path $root 'params.json') -Value $params -Encoding UTF8 -Force
+
+Write-Host 'Scripts provisioned to C:\Installs - ready for manual setup via RDP.'

@@ -1,0 +1,63 @@
+{
+  "farm": {
+    "configDatabaseName": "SP_Config",
+    "adminContentDatabaseName": "SP_Admin_Content",
+    "centralAdminPort": 9999,
+    "serverRole": "SingleServerFarm"
+  },
+  "serviceAccounts": {
+    "farm": "sp_farm",
+    "services": "sp_services",
+    "webApp": "sp_webapp",
+    "search": "sp_search",
+    "contentAccess": "sp_content",
+    "cache": "sp_cache",
+    "appManagement": "sp_apps",
+    "superUser": "sp_supuser",
+    "superReader": "sp_supreader",
+    "setup": "sp_setup"
+  },
+  "serviceApplications": {
+    "search": {
+      "name": "Search Service Application",
+      "databaseName": "SP_Search_AdminDB",
+      "appPoolName": "SearchServiceAppPool",
+      "indexLocation": "F:\\SPSearchIndex"
+    },
+    "managedMetadata": {
+      "name": "Managed Metadata Service",
+      "databaseName": "SP_ManagedMetadata",
+      "appPoolName": "MMSServiceAppPool"
+    },
+    "userProfile": {
+      "name": "User Profile Service Application",
+      "databaseName": "SP_UserProfile",
+      "socialDatabaseName": "SP_UserProfile_Social",
+      "syncDatabaseName": "SP_UserProfile_Sync",
+      "appPoolName": "UPAServiceAppPool"
+    },
+    "appManagement": {
+      "name": "App Management Service",
+      "databaseName": "SP_AppManagement",
+      "appPoolName": "AppMgmtServiceAppPool"
+    },
+    "subscriptionSettings": {
+      "name": "Microsoft SharePoint Foundation Subscription Settings Service Application",
+      "databaseName": "SP_SubscriptionSettings",
+      "appPoolName": "AppMgmtServiceAppPool"
+    }
+  },
+  "webApplication": {
+    "name": "SharePoint Portal",
+    "url": "http://portal.contoso.com",
+    "port": 80,
+    "hostHeader": "portal.contoso.com",
+    "appPoolName": "SP_Portal_AppPool",
+    "databaseName": "SP_Content_Portal",
+    "siteCollection": {
+      "name": "Contoso Portal",
+      "template": "STS#3",
+      "fallbackTemplate": "STS#0"
+    }
+  }
+}

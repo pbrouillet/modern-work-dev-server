@@ -1,0 +1,25 @@
+name: mw-dev-spse
+metadata:
+  template: mw-dev-spse
+hooks:
+  preprovision:
+    - shell: pwsh
+      run: ./hooks/preprovision.ps1
+      continueOnError: false
+  postprovision:
+    - shell: pwsh
+      run: ./hooks/build-rdp-bridge.ps1
+      continueOnError: false
+    - shell: pwsh
+      run: ./hooks/postprovision.ps1
+      continueOnError: true
+    - shell: pwsh
+      run: ./hooks/generate-rdp.ps1
+      continueOnError: true
+infra:
+  provider: bicep
+  layers:
+    - name: landingzone
+      path: ./infra/landingzone
+    - name: compute
+      path: ./infra/compute
