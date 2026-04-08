@@ -1,6 +1,12 @@
 # Modern Work Dev SPSE — Automated SharePoint SE Development Environment
 
-Fully automated provisioning of a single-VM SharePoint Subscription Edition development environment on Azure using **AZD layered provisioning**. A preprovision hook creates the storage account and uploads ISOs/scripts, then two Bicep layers—`landingzone` (VNet, ACR, CAE, Container App) and `compute` (VM + RBAC)—deploy the infrastructure. An RDP bridge (Rust/Axum WebSocket proxy) running on Azure Container Apps provides RD Gateway access to the VM without opening port 3389 publicly. The VM runs 13 unattended phases—from Active Directory promotion through SharePoint farm creation and Visual Studio 2026 installation—delivering a ready-to-use dev box in ~2–3 hours.
+Fully automated provisioning of a single-VM SharePoint Subscription Edition and Exchange Server SE development environment on Azure using **AZD layered provisioning**.
+
+A preprovision hook creates the storage account and uploads ISOs/scripts, then two Bicep layers—`landingzone` (VNet, ACR, CAE) and `compute` (VM + RBAC)—deploy the infrastructure.
+
+An RDP bridge (Rust/Axum WebSocket proxy) running on Azure Container Apps provides RD Gateway access to the VM without opening port 3389 publicly.
+
+The VM runs up to 19 unattended phases—from Active Directory promotion through SharePoint farm creation, optional Exchange Server SE, Visual Studio 2026 installation, and developer-tool provisioning via winget—delivering a ready-to-use dev box in ~2–3 hours.
 
 ## Architecture
 
@@ -9,7 +15,7 @@ Fully automated provisioning of a single-VM SharePoint Subscription Edition deve
 │  Azure Resource Group                                               │
 │                                                                     │
 │  ┌─────────────────────────────────────────────────────────────┐    │
-│  │  Windows Server 2025 VM  (Standard_D8ds_v5)                │    │
+│  │  Windows Server 2025 VM  (Standard_D8ds_v5)                 │    │
 │  │                                                             │    │
 │  │   Active Directory DC  (contoso.com)                        │    │
 │  │   SQL Server 2022 Enterprise                                │    │
@@ -25,20 +31,20 @@ Fully automated provisioning of a single-VM SharePoint Subscription Edition deve
 │  │    snet-default ─────── 10.0.1.0/24  (VM + Storage SE)      │    │
 │  │    snet-container-apps ─ 10.0.4.0/23  (CAE delegation)      │    │
 │  └───────────────────────────────┬─────────────────────────────┘    │
-│                                  │                                   │
+│                                  │                                  │
 │  ┌───────────────────────────────┴─────────────────────────────┐    │
 │  │  Container Apps Environment (VNet-integrated)               │    │
 │  │  ┌───────────────────────────────────────────────────────┐  │    │
 │  │  │  rdp-bridge  (Rust/Axum WebSocket proxy)              │  │    │
 │  │  │  • RD Gateway protocol (MS-TSGU) over WebSocket       │  │    │
 │  │  │  • Azure VM lifecycle: start/stop on connect          │  │    │
-│  │  │  • mstsc → wss://gateway → TCP 3389 on VM            │  │    │
+│  │  │  • mstsc → wss://gateway → TCP 3389 on VM             │  │    │
 │  │  └───────────────────────────────────────────────────────┘  │    │
 │  └─────────────────────────────────────────────────────────────┘    │
 │                                                                     │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐  │
-│  │  Public IP    │  │  NSG         │  │  ACR (rdp-bridge image)  │  │
-│  └──────────────┘  └──────────────┘  └──────────────────────────┘  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐   │
+│  │  Public IP   │  │  NSG         │  │  ACR (rdp-bridge image)  │   │
+│  └──────────────┘  └──────────────┘  └──────────────────────────┘   │
 │                                                                     │
 │  ┌──────────────────────────────────────────────────────────────┐   │
 │  │  Storage Account (ISOs + Scripts)                            │   │
@@ -152,36 +158,57 @@ To change the size, update the `vmSize` parameter in `main.bicep` or pass it as 
 
 ## Provisioning Timeline
 
-The full provisioning runs **~2–3 hours unattended** across 13 phases:
+The full provisioning runs **~2–3 hours unattended** across up to 19 phases:
 
-| # | Phase | ~Duration |
-|---|---|---|
-| 1 | OS configuration & data disk setup | 5 min |
-| 2 | AD DS promotion (+ reboot) | 10 min |
-| 3 | DNS & AD post-reboot configuration | 5 min |
-| 4 | Service account creation | 2 min |
-| 5 | SQL Server 2022 install | 15 min |
-| 6 | SQL Server post-configuration | 5 min |
-| 7 | SharePoint prerequisites | 20 min |
-| 8 | SharePoint binary install (+ reboot) | 25 min |
-| 9 | SharePoint farm creation | 10 min |
-| 10 | Service applications (Search, MMS) | 15 min |
-| 11 | Web application & site collection | 5 min |
-| 12 | Visual Studio 2026 install | 30 min |
-| 13 | Final validation & cleanup | 5 min |
+| # | Phase | ~Duration | Notes |
+|---|---|---|---|
+| 1 | Init disks (data drive) | 2 min | |
+| 2 | Download ISOs from blob storage | 10 min | |
+| 3 | Promote AD DS domain controller (+ reboot) | 10 min | |
+| 4 | Configure DNS (forwarders, portal A record) | 2 min | |
+| 5 | Create service accounts | 2 min | |
+| 6 | Install SQL Server 2022 (+ reboot) | 15 min | |
+| 7 | Configure SQL Server (memory, MAXDOP, logins) | 5 min | |
+| 8 | SharePoint prerequisites (+ reboot) | 20 min | |
+| 9 | SharePoint binaries install (+ reboot) | 25 min | |
+| 10 | Configure SharePoint farm (Central Admin, Search, MMS) | 15 min | |
+| 11 | Create web application & site collection | 5 min | |
+| 14 | Install Exchange prerequisites (+ reboot) | 15 min | Conditional (`EnableExchange`) |
+| 15 | Install Exchange Server SE | 30 min | Conditional (`EnableExchange`) |
+| 16 | Configure Exchange | 10 min | Conditional (`EnableExchange`) |
+| 17 | Install Visual Studio 2026 | 30 min | |
+| 18 | Final OS/dev-experience config | 5 min | Loopback fix, IIS, shortcuts |
+| 19 | Install optional software (winget) | 10 min | Per `config/winget-packages.json` |
+
+> Phases 14–16 only run when `EnableExchange` is set to `True`.
 
 ## Troubleshooting
 
 On the VM, check:
 
-- **Provisioning log**: `D:\SPSESetup\setup.log`
-- **Phase state**: `D:\SPSESetup\state.json`
+- **Provisioning log**: `C:\SPSESetup\setup.log`
+- **Phase state**: `C:\SPSESetup\state.json`
 
 See [`docs/troubleshooting.md`](docs/troubleshooting.md) for common issues and fixes.
 
+### Replaying Specific Phases
+
+To re-run individual phases without repeating the entire provisioning (e.g., after uploading fixed scripts):
+
+```powershell
+# On the VM — replay phases 7, 10, and 18:
+.\Start-Setup.ps1 -ReplayPhases 7,10,18
+```
+
+This resets the attempt counter and status for only the specified phases, skipping all others.
+
+## Optional Software (winget)
+
+Phase 19 installs developer tools via winget from [`scripts/config/winget-packages.json`](scripts/config/winget-packages.json). Default packages include VS Code, Git, Chrome, Azure CLI, PowerShell 7, and more. Edit the JSON to add or remove packages. Failures are best-effort and never block provisioning.
+
 ## Service Accounts
 
-All accounts are created in the **CONTOSO** domain during Phase 4:
+All accounts are created in the **CONTOSO** domain during Phase 5:
 
 | Account | Purpose |
 |---|---|
@@ -190,7 +217,11 @@ All accounts are created in the **CONTOSO** domain during Phase 4:
 | `CONTOSO\sp_services` | Service application pool identity |
 | `CONTOSO\sp_webapp` | Web application pool identity |
 | `CONTOSO\sp_search` | SharePoint Search service account |
-| `CONTOSO\sp_content` | Search content access (crawl) account |
+| `CONTOSO\sp_content` | User Profile / content access account |
+| `CONTOSO\sp_cache` | Distributed Cache service account |
+| `CONTOSO\sp_apps` | App Management service account |
+| `CONTOSO\sp_supuser` | Object Cache super user |
+| `CONTOSO\sp_supreader` | Object Cache super reader |
 
 ## Parameters Reference
 
@@ -206,8 +237,10 @@ All accounts are created in the **CONTOSO** domain during Phase 4:
 | `vmName` | VM computer name | `YOURVM` | No |
 | `domainName` | Active Directory domain FQDN | `contoso.com` | No |
 | `domainNetBIOS` | NetBIOS name for the domain | `CONTOSO` | No |
+| `enableExchange` | Enable Exchange Server SE phases (14–16) | `False` | No |
+| `exchangeIsoFilename` | Exchange Server SE ISO blob name | `ExchangeServerSE-x64.iso` | No |
 
-> **Note**: `storageAccountName` is auto-generated by the **storage** layer and carried to the **compute** layer via AZD environment variables — you do not need to set it manually. The VM accesses blobs via managed identity (no storage keys or SAS tokens).
+> **Note**: `storageAccountName` is auto-generated by the **preprovision hook** and carried to the **compute** layer via AZD environment variables — you do not need to set it manually. The VM accesses blobs via managed identity (no storage keys or SAS tokens).
 
 ## License
 

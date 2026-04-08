@@ -479,7 +479,7 @@ The largest phase. Runs as SYSTEM (which has local admin + SQL sysadmin rights b
 
 ---
 
-### Phase 12 — `12-InstallVS2026.ps1` — Install Visual Studio 2026 Enterprise
+### Phase 17 — `17-InstallVS2026.ps1` — Install Visual Studio 2026 Enterprise
 
 **What it does:**
 
@@ -513,7 +513,7 @@ The largest phase. Runs as SYSTEM (which has local admin + SQL sysadmin rights b
 
 ---
 
-### Phase 13 — `13-FinalConfig.ps1` — Final Developer-Experience Configuration
+### Phase 18 — `18-FinalConfig.ps1` — Final Developer-Experience Configuration
 
 The last phase. Applies quality-of-life settings and writes the completion summary.
 
@@ -603,7 +603,7 @@ Product license keys. Phase 09 reads `sharepoint.productKey` at runtime.
 
 ### `config/vs-workloads.json`
 
-Read by Phase 12 for workload IDs and bootstrapper CDN URLs.
+Read by Phase 17 for workload IDs and bootstrapper CDN URLs.
 
 ```json
 {
@@ -636,7 +636,7 @@ The system handles exactly 5 potential reboots:
 | 6 (InstallSQLServer) | SQL Server installer requirement | **Yes** |
 | 8 (InstallSPPrereqs) | SP prerequisites (dotnet, VC++ runtimes, etc.) | **Yes** |
 | 9 (InstallSPBinaries) | SP binaries | **Yes** |
-| 12 (InstallVS2026) | VS installer exit code 3010 | **Conditional** |
+| 17 (InstallVS2026) | VS installer exit code 3010 | **Conditional** |
 
 **Reboot sequence for a rebooting phase:**
 
@@ -729,7 +729,7 @@ C:\SPSESetup\           ← Persistent working directory (created by Phase 01 / 
     state.json          ← Phase state machine
     params.json         ← Persisted params (SYSTEM-only ACL)
     setup.log           ← Full execution log
-    setup-summary.txt   ← Human-readable summary (written by Phase 13)
+    setup-summary.txt   ← Human-readable summary (written by Phase 18)
     completion-summary.txt ← Attempt/status breakdown (written by orchestrator)
     COMPLETED           ← Sentinel file (created when all phases done)
     sp-setup-config.xml ← SharePoint unattended setup config (written by Phase 09)
@@ -743,7 +743,7 @@ F:\                     ← Data drive initialized in Phase 01
     Installers\
         {SqlIsoFileName}
         {SpIsoFileName}
-        vs_enterprise.exe  ← Downloaded in Phase 12
+        vs_enterprise.exe  ← Downloaded in Phase 17
     SQLData\
     SQLLogs\
     SQLTempDB\
@@ -784,8 +784,8 @@ bootstrap.ps1 (Resume)
     ├── Phase 09: re-enter → SP installed → "success"
     ├── Phase 10: ConfigureSPFarm     → SP_Config, Central Admin, Search, MMS
     ├── Phase 11: CreateSPWebApp      → portal.contoso.com, site collection
-    ├── Phase 12: InstallVS2026       → [*** REBOOT #5 if exit=3010 ***]
-    └── Phase 13: FinalConfig         → shortcuts, IE ESC off, firewall off, summary
+    ├── Phase 17: InstallVS2026       → [*** REBOOT #5 if exit=3010 ***]
+    └── Phase 18: FinalConfig         → shortcuts, IE ESC off, firewall off, summary
     
 [All phases complete]
     ├── Unregister scheduled task
@@ -819,8 +819,8 @@ bootstrap.ps1 (Resume)
 [^20]: `scripts/phases/09-InstallSPBinaries.ps1` — full file; config.xml generation.
 [^21]: `scripts/phases/10-ConfigureSPFarm.ps1` — full file; Search topology construction.
 [^22]: `scripts/phases/11-CreateSPWebApp.ps1` — full file; developer dashboard enablement.
-[^23]: `scripts/phases/12-InstallVS2026.ps1` — full file; bootstrapper CDN URLs noted as hypothetical.
-[^24]: `scripts/phases/13-FinalConfig.ps1` — full file; IE ESC registry keys.
+[^23]: `scripts/phases/17-InstallVS2026.ps1` — full file; bootstrapper CDN URLs noted as hypothetical.
+[^24]: `scripts/phases/18-FinalConfig.ps1` — full file; IE ESC registry keys.
 [^25]: `scripts/config/sp-farm-config.json` — full file.
 [^26]: `scripts/config/serials.json` — full file.
 [^27]: `scripts/config/vs-workloads.json` — full file.
