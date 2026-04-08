@@ -3,7 +3,7 @@
     Main orchestrator for automated SharePoint SE dev-box provisioning.
 
 .DESCRIPTION
-    Implements a state-machine pattern that executes 13 phases sequentially,
+    Implements a state-machine pattern that executes 19 phases sequentially,
     surviving reboots between phases.  The Azure Custom Script Extension (CSE)
     invokes this script on first run; subsequent runs are triggered by a
     scheduled task that re-enters the same state machine after each reboot.
@@ -55,7 +55,12 @@ param(
     [string]$DomainNetBIOS   = "CONTOSO",
     [string]$EnableExchange  = "False",
     [string]$ExchangeIsoFileName = "ExchangeServerSE-x64.iso",
-    [switch]$Force
+    [switch]$Force,
+
+    # Replay specific phases by number, bypassing completed/attempt checks.
+    # Only the listed phases run; all others are skipped.
+    # Example: -ReplayPhases 7,10,18
+    [int[]]$ReplayPhases = @()
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -81,11 +86,12 @@ $PhaseDefinitions = @(
     @{ Number =  9; Script = "09-InstallSPBinaries.ps1";       Function = "Invoke-Phase09-InstallSPBinaries"       }
     @{ Number = 10; Script = "10-ConfigureSPFarm.ps1";         Function = "Invoke-Phase10-ConfigureSPFarm"         }
     @{ Number = 11; Script = "11-CreateSPWebApp.ps1";          Function = "Invoke-Phase11-CreateSPWebApp"          }
-    @{ Number = 12; Script = "12-InstallVS2026.ps1";           Function = "Invoke-Phase12-InstallVS2026"           }
-    @{ Number = 13; Script = "13-FinalConfig.ps1";             Function = "Invoke-Phase13-FinalConfig"             }
     @{ Number = 14; Script = "14-InstallExchangePrereqs.ps1";  Function = "Invoke-Phase14-InstallExchangePrereqs";  Condition = { $script:Params.EnableExchange -eq 'True' } }
     @{ Number = 15; Script = "15-InstallExchange.ps1";         Function = "Invoke-Phase15-InstallExchange";         Condition = { $script:Params.EnableExchange -eq 'True' } }
     @{ Number = 16; Script = "16-ConfigureExchange.ps1";       Function = "Invoke-Phase16-ConfigureExchange";       Condition = { $script:Params.EnableExchange -eq 'True' } }
+    @{ Number = 17; Script = "17-InstallVS2026.ps1";           Function = "Invoke-Phase17-InstallVS2026"           }
+    @{ Number = 18; Script = "18-FinalConfig.ps1";             Function = "Invoke-Phase18-FinalConfig"             }
+    @{ Number = 19; Script = "19-InstallOptionalSoftware.ps1"; Function = "Invoke-Phase19-InstallOptionalSoftware" }
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -318,6 +324,19 @@ try {
         $helpersDir = Join-Path $ActiveScriptsDir "helpers"
     }
 
+    # ── Always re-sync scripts when invoked from a different directory ──
+    # Start-Setup.ps1 syncs the latest scripts from blob storage into
+    # $PSScriptRoot (C:\Installs) before calling bootstrap.ps1.  If we are
+    # running from a source dir that differs from the persistent setup root,
+    # re-copy so the persistent location stays current.
+    if ($PSScriptRoot -ne $ScriptsRoot -and (Test-Path (Join-Path $PSScriptRoot "phases"))) {
+        Write-Host "Re-syncing scripts from '$PSScriptRoot' to '$ScriptsRoot' ..."
+        Copy-ScriptsToSetupRoot -SourceScriptsDir $PSScriptRoot
+        Copy-Item -Path (Join-Path $PSScriptRoot "bootstrap.ps1") -Destination (Join-Path $ScriptsRoot "bootstrap.ps1") -Force
+        $ActiveScriptsDir = $ScriptsRoot
+        $helpersDir = Join-Path $ActiveScriptsDir "helpers"
+    }
+
     # ── Dot-source helper modules ───────────────────────────────────────
     foreach ($helperFile in @("Common.ps1", "Download-FromBlob.ps1", "Wait-ForReboot.ps1")) {
         $helperPath = Join-Path $helpersDir $helperFile
@@ -442,14 +461,29 @@ try {
 
         $phaseState = $state.Phases[$phaseKey]
 
-        # ── Skip completed phases (unless -Force) ──────────────────────
-        if ($phaseState.Status -eq "completed" -and -not $Force) {
+        # ── Replay-mode: only run explicitly requested phases ──────────
+        $isReplayMode  = $ReplayPhases.Count -gt 0
+        $isReplayPhase = $isReplayMode -and ($phaseNum -in $ReplayPhases)
+
+        if ($isReplayMode -and -not $isReplayPhase) {
+            # In replay mode, skip every phase not in the list
+            continue
+        }
+
+        if ($isReplayPhase) {
+            Write-Log "Phase $phaseNum ($phaseFunc): replay requested — resetting state."
+            $phaseState.Attempts = 0
+            $phaseState.Status   = "pending"
+        }
+
+        # ── Skip completed phases (unless -Force or replay) ────────────
+        if ($phaseState.Status -eq "completed" -and -not $Force -and -not $isReplayPhase) {
             Write-Log "Phase $phaseNum ($phaseFunc): already completed — skipping."
             continue
         }
 
         # ── Skip phases whose condition is not met ─────────────────────
-        if ($phaseState.Status -eq "skipped" -and -not $Force) {
+        if ($phaseState.Status -eq "skipped" -and -not $Force -and -not $isReplayPhase) {
             Write-Log "Phase $phaseNum ($phaseFunc): previously skipped — skipping."
             continue
         }
@@ -462,7 +496,7 @@ try {
         }
 
         # ── Guard: max attempts ────────────────────────────────────────
-        if ($phaseState.Attempts -ge $MaxAttempts -and -not $Force) {
+        if ($phaseState.Attempts -ge $MaxAttempts -and -not $Force -and -not $isReplayPhase) {
             Write-Log "ERROR: Phase $phaseNum ($phaseFunc) has failed $($phaseState.Attempts) times (max $MaxAttempts). Stopping." -Level Error
             $allPhasesCompleted = $false
             break
@@ -526,7 +560,6 @@ try {
             }
 
             "success" {
-                Complete-Phase -PhaseNumber $phaseNum
                 $phaseState.Status      = "completed"
                 $phaseState.CompletedAt = (Get-Date -Format 'o')
                 $state.Phases[$phaseKey] = $phaseState
@@ -544,7 +577,6 @@ try {
             default {
                 # Treat any other truthy/null return as success
                 # (phase functions that don't explicitly return a value).
-                Complete-Phase -PhaseNumber $phaseNum
                 $phaseState.Status      = "completed"
                 $phaseState.CompletedAt = (Get-Date -Format 'o')
                 $state.Phases[$phaseKey] = $phaseState

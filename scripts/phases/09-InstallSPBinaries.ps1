@@ -17,6 +17,15 @@ function Invoke-Phase09-InstallSPBinaries {
 
     Write-Log "===== Phase 09 – Install SharePoint Binaries ====="
 
+    # ------------------------------------------------------------------
+    # Idempotency: skip if SharePoint binaries are already installed
+    # ------------------------------------------------------------------
+    $owsTimerPath = "C:\Program Files\Common Files\microsoft shared\Web Server Extensions\16\BIN\OWSTIMER.EXE"
+    if (Test-Path $owsTimerPath) {
+        Write-Log "SharePoint binaries already installed (OWSTIMER.EXE present) – skipping"
+        return "success"
+    }
+
     $isoPath    = "F:\Installers\$($script:Params.SpIsoFileName)"
     $configDir  = "C:\SPSESetup"
     $configFile = Join-Path $configDir "sp-setup-config.xml"

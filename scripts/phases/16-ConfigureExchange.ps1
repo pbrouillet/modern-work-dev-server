@@ -1,4 +1,4 @@
-#Requires -RunAsAdministrator
+﻿#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
     Phase 16 – Post-install Exchange configuration, test mailbox, and desktop shortcuts.

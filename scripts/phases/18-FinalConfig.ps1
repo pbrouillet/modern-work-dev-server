@@ -1,7 +1,7 @@
 ﻿#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Phase 13 – Final developer-experience configuration and cleanup.
+    Phase 18 – Final developer-experience configuration and cleanup.
 .DESCRIPTION
     Applies quality-of-life settings for the SPSE dev box:
       * Disables IE Enhanced Security Configuration
@@ -16,12 +16,12 @@
     Parameters are read from $script:Params.
 #>
 
-function Invoke-Phase13-FinalConfig {
+function Invoke-Phase18-FinalConfig {
     [CmdletBinding()]
     [OutputType([string])]
     param()
 
-    Write-Log "===== Phase 13: Final Configuration – START ====="
+    Write-Log "===== Phase 18: Final Configuration – START ====="
 
     $domainFqdn = $script:Params.DomainName
     $portalHost  = "portal.$domainFqdn"
@@ -468,6 +468,6 @@ function Invoke-Phase13-FinalConfig {
     # Intentionally NOT deleting ISOs or installers – the user may need them.
     Write-Log "ISO and installer files preserved in D:\Installers (delete manually if not needed)"
 
-    Write-Log "===== Phase 13: Final Configuration – COMPLETE ====="
+    Write-Log "===== Phase 18: Final Configuration – COMPLETE ====="
     return "success"
 }

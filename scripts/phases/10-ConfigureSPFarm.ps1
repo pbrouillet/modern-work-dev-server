@@ -29,7 +29,9 @@ function Invoke-Phase10-ConfigureSPFarm {
     # ------------------------------------------------------------------
     # 0. Load the SharePoint snap-in
     # ------------------------------------------------------------------
-    Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
+    if (-not (Get-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue)) {
+        Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
+    }
 
     # ------------------------------------------------------------------
     # Helper – build domain-qualified account name
@@ -48,6 +50,15 @@ function Invoke-Phase10-ConfigureSPFarm {
 
     if ($existingFarm) {
         Write-Log "SharePoint farm already exists (ID: $($existingFarm.Id)) – skipping database creation"
+
+        # Ensure the server role is Custom (not SingleServerFarm) so that
+        # custom search topology operations are allowed.
+        $localServer = Get-SPServer -Identity $env:COMPUTERNAME -ErrorAction SilentlyContinue
+        if ($localServer -and $localServer.Role -ne "Custom") {
+            Write-Log "Server role is '$($localServer.Role)' – changing to 'Custom'..."
+            Set-SPServer -Identity $env:COMPUTERNAME -Role Custom -ErrorAction Stop
+            Write-Log "Server role changed to 'Custom'"
+        }
     }
     else {
         Write-Log "Creating SharePoint configuration database..."
@@ -65,7 +76,7 @@ function Invoke-Phase10-ConfigureSPFarm {
                 -AdministrationContentDatabaseName "SP_Admin_Content" `
                 -Passphrase $farmPassphrase `
                 -FarmCredentials $farmCredential `
-                -LocalServerRole "SingleServerFarm"
+                -LocalServerRole "Custom"
         }
 
         Write-Log "Configuration database created successfully"
@@ -148,7 +159,6 @@ function Invoke-Phase10-ConfigureSPFarm {
     #    Wait for each service to reach "Online" status.
     # ------------------------------------------------------------------
     $serviceTypesToStart = @(
-        "SharePoint Server Search",
         "Managed Metadata Web Service",
         "User Profile Service",
         "App Management Service"
@@ -180,9 +190,8 @@ function Invoke-Phase10-ConfigureSPFarm {
             Write-Log "Start-SPServiceInstance '$typeName' threw: $_ — will poll for status" -Level WARN
         }
 
-        # Poll until the service is online (max ~5 min, 20 min for Search)
-        $maxWaitSeconds = if ($typeName -like '*Search*') { 1200 } else { 300 }
-        $maxWaitSeconds = [int]$maxWaitSeconds
+        # Poll until the service is online (max ~5 min)
+        $maxWaitSeconds = 300
         $elapsed = 0
         $pollInterval = 15
 
@@ -209,9 +218,70 @@ function Invoke-Phase10-ConfigureSPFarm {
 
     # ------------------------------------------------------------------
     # 5. Search Service Application
-    #    Guard against re-creation if the app already exists.
+    #    Set the search service process identity BEFORE starting the
+    #    service instance.  Without this the Windows service
+    #    "SharePoint Server Search 16" runs as Local Service, which
+    #    lacks the permissions needed to complete provisioning.
     # ------------------------------------------------------------------
     $searchAppName = "Search Service Application"
+    $searchPoolAccount = "$domainPrefix\sp_search"
+
+    # 5a. Set Search service process identity (idempotent)
+    $searchSvc = Get-SPEnterpriseSearchService
+    if ($searchSvc.ProcessIdentity -ne $searchPoolAccount) {
+        Write-Log "Setting Search service process identity to '$searchPoolAccount'..."
+        $searchPassword = ConvertTo-SecureString $script:Params.DomainAdminPassword -AsPlainText -Force
+        Set-SPEnterpriseSearchService -Identity $searchSvc `
+            -ServiceAccount $searchPoolAccount `
+            -ServicePassword $searchPassword `
+            -ErrorAction Stop
+        Write-Log "Search service process identity set to '$searchPoolAccount'"
+    }
+    else {
+        Write-Log "Search service process identity already set to '$searchPoolAccount' – skipping"
+    }
+
+    # 5b. Start Search service instance and wait for Online
+    $searchSvcInstance = Get-SPServiceInstance -Server $env:COMPUTERNAME -ErrorAction SilentlyContinue |
+        Where-Object { $_.TypeName -eq "SharePoint Server Search" }
+
+    if ($searchSvcInstance -and $searchSvcInstance.Status -ne "Online") {
+        Write-Log "Starting service instance 'SharePoint Server Search'..."
+        try {
+            Start-SPServiceInstance $searchSvcInstance -ErrorAction Stop | Out-Null
+        }
+        catch {
+            Write-Log "Start-SPServiceInstance 'SharePoint Server Search' threw: $_ — will poll for status" -Level WARN
+        }
+
+        $maxWaitSeconds = 1200
+        $elapsed = 0
+        $pollInterval = 15
+
+        while ($elapsed -lt $maxWaitSeconds) {
+            Start-Sleep -Seconds $pollInterval
+            $elapsed += $pollInterval
+
+            $searchSvcInstance = Get-SPServiceInstance -Server $env:COMPUTERNAME |
+                Where-Object { $_.TypeName -eq "SharePoint Server Search" }
+
+            if ($searchSvcInstance.Status -eq "Online") {
+                Write-Log "Service 'SharePoint Server Search' is now Online (waited ${elapsed}s)"
+                break
+            }
+
+            Write-Log "Service 'SharePoint Server Search' status: $($searchSvcInstance.Status) – waiting... (${elapsed}s / ${maxWaitSeconds}s)" -Level DEBUG
+        }
+
+        if ($searchSvcInstance.Status -ne "Online") {
+            Write-Log "Service 'SharePoint Server Search' did not come Online within ${maxWaitSeconds}s (status: $($searchSvcInstance.Status))" -Level WARN
+        }
+    }
+    elseif ($searchSvcInstance) {
+        Write-Log "Service 'SharePoint Server Search' is already Online – skipping"
+    }
+
+    # 5c. Create Search Service Application
     $existingSearchApp = Get-SPEnterpriseSearchServiceApplication -Identity $searchAppName -ErrorAction SilentlyContinue
 
     if ($existingSearchApp) {
@@ -219,8 +289,6 @@ function Invoke-Phase10-ConfigureSPFarm {
     }
     else {
         Write-Log "Creating Search Service Application..."
-
-        $searchPoolAccount = "$domainPrefix\sp_search"
         $searchAppPool = Get-SPServiceApplicationPool -Identity "SearchServiceAppPool" -ErrorAction SilentlyContinue
         if (-not $searchAppPool) {
             $searchAppPool = New-SPServiceApplicationPool -Name "SearchServiceAppPool" `
@@ -456,6 +524,118 @@ function Invoke-Phase10-ConfigureSPFarm {
     }
     catch {
         Write-Log "Failed to switch Distributed Cache account: $_" -Level WARN
+    }
+
+    # ------------------------------------------------------------------
+    # 11. Re-run Initialize-SPResourceSecurity
+    #     After all service applications and managed accounts are
+    #     provisioned, re-run this to ensure registry ACLs (e.g. the
+    #     farm encryption key under HKLM\...\16.0\Secure\FarmAdmin)
+    #     include the search and other service accounts.  Without this,
+    #     the search service throws "Requested registry access is not
+    #     allowed" when calling SPCredentialManager.GetMasterKey.
+    # ------------------------------------------------------------------
+    Write-Log "Re-running Initialize-SPResourceSecurity (post service-application provisioning)..."
+    try {
+        Initialize-SPResourceSecurity -ErrorAction Stop
+        Write-Log "Initialize-SPResourceSecurity completed"
+    }
+    catch {
+        Write-Log "Initialize-SPResourceSecurity warning: $_" -Level WARN
+    }
+
+    # ------------------------------------------------------------------
+    # 12. Grant search service account explicit registry access
+    #     The search service process identity needs read access to the
+    #     farm encryption key in the registry.  Initialize-SPResourceSecurity
+    #     usually handles this, but on single-server farms it can miss
+    #     the search account.  Grant it explicitly as a safety net.
+    # ------------------------------------------------------------------
+    try {
+        $secureKeyPath = "HKLM:\SOFTWARE\Microsoft\Shared Tools\Web Server Extensions\16.0\Secure"
+        if (Test-Path $secureKeyPath) {
+            $acl = Get-Acl -Path $secureKeyPath
+            $searchIdentity = "$domainPrefix\sp_search"
+            $existingRule = $acl.Access | Where-Object {
+                $_.IdentityReference.Value -eq $searchIdentity
+            }
+            if (-not $existingRule) {
+                Write-Log "Granting '$searchIdentity' read access to farm Secure registry key..."
+                $rule = New-Object System.Security.AccessControl.RegistryAccessRule(
+                    $searchIdentity,
+                    [System.Security.AccessControl.RegistryRights]::ReadKey,
+                    [System.Security.AccessControl.InheritanceFlags]"ContainerInherit,ObjectInherit",
+                    [System.Security.AccessControl.PropagationFlags]::None,
+                    [System.Security.AccessControl.AccessControlType]::Allow
+                )
+                $acl.AddAccessRule($rule)
+                Set-Acl -Path $secureKeyPath -AclObject $acl
+                Write-Log "Registry ACL updated for '$searchIdentity'"
+            }
+            else {
+                Write-Log "Search account already has registry access to Secure key" -Level DEBUG
+            }
+        }
+        else {
+            Write-Log "Secure registry key not found at expected path – skipping" -Level WARN
+        }
+    }
+    catch {
+        Write-Log "Failed to grant search registry access: $_" -Level WARN
+    }
+
+    # ------------------------------------------------------------------
+    # 13. Fix SP_Config database permissions for service accounts
+    #     Service application pool accounts need the SPDataAccess role in
+    #     SP_Config to execute stored procedures like proc_putObjectTVP.
+    #     SharePoint normally provisions these automatically, but on
+    #     single-server dev farms the auto-grant can fail silently.
+    # ------------------------------------------------------------------
+    Write-Log "Ensuring SP_Config database permissions for managed accounts..."
+    try {
+        $sqlcmdPath = $null
+        $searchPaths = @(
+            "C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\*\Tools\Binn\SQLCMD.EXE"
+            "C:\Program Files\Microsoft SQL Server\160\Tools\Binn\SQLCMD.EXE"
+            "C:\Program Files\Microsoft SQL Server\150\Tools\Binn\SQLCMD.EXE"
+        )
+        foreach ($pattern in $searchPaths) {
+            $found = Get-Item -Path $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { $sqlcmdPath = $found.FullName; break }
+        }
+        if (-not $sqlcmdPath) {
+            $sqlcmdPath = (Get-Command sqlcmd.exe -ErrorAction SilentlyContinue).Source
+        }
+
+        if ($sqlcmdPath) {
+            # Accounts that run service application pools and need SP_Config access
+            $spConfigAccounts = @("sp_content", "sp_services", "sp_search", "sp_webapp", "sp_apps", "sp_cache")
+
+            foreach ($acctName in $spConfigAccounts) {
+                $fqName = "$domainPrefix\$acctName"
+                $sql = @"
+USE [SP_Config];
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'$fqName')
+    CREATE USER [$fqName] FOR LOGIN [$fqName];
+IF EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'SPDataAccess' AND type = 'R')
+    ALTER ROLE [SPDataAccess] ADD MEMBER [$fqName];
+"@
+                $result = & $sqlcmdPath -S "." -E -b -Q $sql 2>&1
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Log "SP_Config permission grant for '$fqName' returned exit code $LASTEXITCODE" -Level WARN
+                }
+                else {
+                    Write-Log "SP_Config permissions ensured for '$fqName'" -Level DEBUG
+                }
+            }
+            Write-Log "SP_Config database permissions verified for all service accounts"
+        }
+        else {
+            Write-Log "sqlcmd.exe not found – skipping SP_Config permission fixup" -Level WARN
+        }
+    }
+    catch {
+        Write-Log "Failed to fix SP_Config permissions: $_" -Level WARN
     }
 
     Write-Log "===== Phase 10: Configure SharePoint Farm – COMPLETE ====="

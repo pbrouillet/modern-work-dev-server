@@ -1,0 +1,14 @@
+{
+  "$schema": "https://aka.ms/winget-packages.schema.2.0.json",
+  "description": "Optional developer tools installed via winget on the SPSE dev box. Add or remove packages as needed. Each entry must have a 'PackageIdentifier'; 'Version' is optional (omit for latest).",
+  "packages": [
+    { "PackageIdentifier": "Microsoft.DotNet.SDK.10" },
+    { "PackageIdentifier": "Microsoft.VisualStudioCode" },
+    { "PackageIdentifier": "Git.Git" },
+    { "PackageIdentifier": "Google.Chrome" },
+    { "PackageIdentifier": "Microsoft.AzureCLI" },
+    { "PackageIdentifier": "Microsoft.PowerShell" },
+    { "PackageIdentifier": "Microsoft.Azure.StorageExplorer" },
+    { "PackageIdentifier": "Microsoft.Sysinternals.Suite" }
+  ]
+}

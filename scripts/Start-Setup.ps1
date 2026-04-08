@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Launches the SPSE bootstrap from the provisioned scripts directory.
 .DESCRIPTION
@@ -12,7 +12,11 @@
     Run this script as Administrator from an elevated PowerShell prompt.
 #>
 Param (
-    $paramsFile = $(Join-Path $PSScriptRoot 'params.json')
+    $paramsFile = $(Join-Path $PSScriptRoot 'params.json'),
+
+    # Optional: replay specific phases regardless of their state.
+    # Example: -ReplayPhases 7,10,18
+    [int[]]$ReplayPhases = @()
 )
 $ErrorActionPreference = 'Stop'
 
@@ -85,6 +89,10 @@ if ($p.PSObject.Properties['EnableExchange']) {
 }
 if ($p.PSObject.Properties['ExchangeIsoFileName']) {
     $bootstrapArgs['ExchangeIsoFileName'] = $p.ExchangeIsoFileName
+}
+
+if ($ReplayPhases.Count -gt 0) {
+    $bootstrapArgs['ReplayPhases'] = $ReplayPhases
 }
 
 & (Join-Path $PSScriptRoot 'bootstrap.ps1') @bootstrapArgs

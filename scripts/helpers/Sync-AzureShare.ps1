@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Sync files to/from Azure Blob Storage using azcopy with managed identity.
 .DESCRIPTION

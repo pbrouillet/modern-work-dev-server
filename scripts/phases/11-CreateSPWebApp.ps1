@@ -21,7 +21,9 @@ function Invoke-Phase11-CreateSPWebApp {
     # ------------------------------------------------------------------
     # 0. Load SharePoint snap-in
     # ------------------------------------------------------------------
-    Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
+    if (-not (Get-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue)) {
+        Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
+    }
 
     $domainPrefix = $script:Params.DomainNetBIOS
     $domainFqdn   = $script:Params.DomainName          # e.g. contoso.com
@@ -93,16 +95,22 @@ function Invoke-Phase11-CreateSPWebApp {
             $webApp.Properties["portalsuperreaderaccount"] = $superReader
             $webApp.Update()
 
-            # Grant user policies on the web application
-            $policy1 = $webApp.Policies.Add($superUser, "Super User (Object Cache)")
-            $policy1.PolicyRoleBindings.Add(
-                $webApp.PolicyRoles.GetSpecialRole(
-                    [Microsoft.SharePoint.Administration.SPPolicyRoleType]::FullControl))
+            # Grant user policies on the web application (skip if already present)
+            $existingSU = $webApp.Policies | Where-Object { $_.UserName -eq $superUser }
+            if (-not $existingSU) {
+                $policy1 = $webApp.Policies.Add($superUser, "Super User (Object Cache)")
+                $policy1.PolicyRoleBindings.Add(
+                    $webApp.PolicyRoles.GetSpecialRole(
+                        [Microsoft.SharePoint.Administration.SPPolicyRoleType]::FullControl))
+            }
 
-            $policy2 = $webApp.Policies.Add($superReader, "Super Reader (Object Cache)")
-            $policy2.PolicyRoleBindings.Add(
-                $webApp.PolicyRoles.GetSpecialRole(
-                    [Microsoft.SharePoint.Administration.SPPolicyRoleType]::FullRead))
+            $existingSR = $webApp.Policies | Where-Object { $_.UserName -eq $superReader }
+            if (-not $existingSR) {
+                $policy2 = $webApp.Policies.Add($superReader, "Super Reader (Object Cache)")
+                $policy2.PolicyRoleBindings.Add(
+                    $webApp.PolicyRoles.GetSpecialRole(
+                        [Microsoft.SharePoint.Administration.SPPolicyRoleType]::FullRead))
+            }
 
             $webApp.Update()
             Write-Log "Object Cache accounts configured (SuperUser: $superUser, SuperReader: $superReader)"

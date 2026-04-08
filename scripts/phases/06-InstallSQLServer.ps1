@@ -17,6 +17,15 @@ function Invoke-Phase06-InstallSQLServer {
 
     Write-Log "===== Phase 06 – Install SQL Server 2022 ====="
 
+    # ------------------------------------------------------------------
+    # Idempotency: skip if SQL Server is already installed
+    # ------------------------------------------------------------------
+    $sqlRegPath = "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL"
+    if ((Test-Path $sqlRegPath) -and (Get-ItemProperty -Path $sqlRegPath -ErrorAction SilentlyContinue).MSSQLSERVER) {
+        Write-Log "SQL Server instance 'MSSQLSERVER' already installed – skipping"
+        return "success"
+    }
+
     $isoPath = "F:\Installers\$($script:Params.SqlIsoFileName)"
     $domainNB = $script:Params.DomainNetBIOS
     $password = $script:Params.DomainAdminPassword

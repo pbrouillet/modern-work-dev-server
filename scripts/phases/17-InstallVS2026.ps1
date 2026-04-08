@@ -1,7 +1,7 @@
 ﻿#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Phase 12 – Download and silently install Visual Studio 2026 Enterprise.
+    Phase 17 – Download and silently install Visual Studio 2026 Enterprise.
 .DESCRIPTION
     Downloads the VS bootstrapper from blob storage (preferred) or the
     public Microsoft CDN, then performs a quiet installation with workloads
@@ -20,12 +20,12 @@
     Invoke-WithRetry.  Parameters are read from $script:Params.
 #>
 
-function Invoke-Phase12-InstallVS2026 {
+function Invoke-Phase17-InstallVS2026 {
     [CmdletBinding()]
     [OutputType([string])]
     param()
 
-    Write-Log "===== Phase 12: Install Visual Studio 2026 – START ====="
+    Write-Log "===== Phase 17: Install Visual Studio 2026 – START ====="
 
     $installersDir    = "F:\Installers"
     $bootstrapperPath = Join-Path $installersDir "vs_enterprise.exe"
@@ -78,11 +78,28 @@ function Invoke-Phase12-InstallVS2026 {
 
         Write-Log "Attempting to download VS bootstrapper from blob: $blobBootstrapperUrl"
         try {
-            $azcopyExe = Get-ChildItem -Path "$env:TEMP\azcopy" -Recurse -Filter 'azcopy.exe' -ErrorAction SilentlyContinue |
-                Select-Object -First 1
+            $azcopyExe = $null
+            $azcopySearchPaths = @(
+                "$env:TEMP\azcopy",
+                "$env:SystemRoot\Temp\azcopy",
+                'C:\Installs'
+            )
+            foreach ($sp in $azcopySearchPaths) {
+                if (Test-Path $sp) {
+                    $found = Get-ChildItem -Path $sp -Recurse -Filter 'azcopy.exe' -ErrorAction SilentlyContinue |
+                        Select-Object -First 1
+                    if ($found) { $azcopyExe = $found; break }
+                }
+            }
+            # Last resort: download azcopy
             if (-not $azcopyExe) {
-                $azcopyExe = Get-ChildItem -Path 'C:\Installs' -Recurse -Filter 'azcopy.exe' -ErrorAction SilentlyContinue |
-                    Select-Object -First 1
+                Write-Log "azcopy not found in known locations — downloading..."
+                $azDir = Join-Path $env:TEMP 'azcopy'
+                New-Item -ItemType Directory -Path $azDir -Force | Out-Null
+                $zipPath = Join-Path $env:TEMP 'azcopy.zip'
+                Invoke-WebRequest -Uri 'https://aka.ms/downloadazcopy-v10-windows' -OutFile $zipPath -UseBasicParsing
+                Expand-Archive -Path $zipPath -DestinationPath $azDir -Force
+                $azcopyExe = Get-ChildItem -Path $azDir -Recurse -Filter 'azcopy.exe' | Select-Object -First 1
             }
             if ($azcopyExe) {
                 $env:AZCOPY_AUTO_LOGIN_TYPE = 'MSI'
@@ -205,18 +222,18 @@ function Invoke-Phase12-InstallVS2026 {
     switch ($exitCode) {
         0 {
             Write-Log "Visual Studio 2026 installed successfully"
-            Write-Log "===== Phase 12: Install Visual Studio 2026 – COMPLETE ====="
+            Write-Log "===== Phase 17: Install Visual Studio 2026 – COMPLETE ====="
             return "success"
         }
         3010 {
             Write-Log "Visual Studio 2026 installed – reboot required (exit code 3010)"
-            Write-Log "===== Phase 12: Install Visual Studio 2026 – COMPLETE (reboot) ====="
+            Write-Log "===== Phase 17: Install Visual Studio 2026 – COMPLETE (reboot) ====="
             return "reboot"
         }
         5007 {
             # Already installed or partially installed
             Write-Log "Visual Studio 2026 already installed (exit code 5007)" -Level WARN
-            Write-Log "===== Phase 12: Install Visual Studio 2026 – COMPLETE ====="
+            Write-Log "===== Phase 17: Install Visual Studio 2026 – COMPLETE ====="
             return "success"
         }
         default {

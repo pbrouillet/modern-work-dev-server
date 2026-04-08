@@ -145,6 +145,19 @@ IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'${domainNB}\sp
     CREATE LOGIN [${domainNB}\sp_farm] FROM WINDOWS;
 "@
 
+    # 3c. Pre-create logins for all SharePoint service accounts
+    #     SharePoint creates these during farm config, but pre-creating
+    #     them avoids permission gaps if auto-provisioning is incomplete.
+    $spServiceAccounts = @("sp_services", "sp_webapp", "sp_search", "sp_content", "sp_cache", "sp_apps")
+    foreach ($acctName in $spServiceAccounts) {
+        $fqName = "${domainNB}\$acctName"
+        Write-Log "Ensuring login for $fqName..."
+        Invoke-SqlCmd-Batch -Description "Create $acctName login" -Sql @"
+IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'$fqName')
+    CREATE LOGIN [$fqName] FROM WINDOWS;
+"@
+    }
+
     # ------------------------------------------------------------------
     # 4. Verify configuration
     # ------------------------------------------------------------------

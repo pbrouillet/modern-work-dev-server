@@ -1,4 +1,4 @@
-#Requires -RunAsAdministrator
+﻿#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
     Phase 14 – Install Windows features and prerequisites for Exchange Server SE.
@@ -86,7 +86,47 @@ function Invoke-Phase14-InstallExchangePrereqs {
     }
 
     # ------------------------------------------------------------------
-    # 2. Install Visual C++ 2013 Redistributable (x64) if not present
+    # 2. Install IIS URL Rewrite Module if not present
+    # ------------------------------------------------------------------
+    $urlRewriteInstalled = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\IIS Extensions\URL Rewrite" -ErrorAction SilentlyContinue
+    if (-not $urlRewriteInstalled) {
+        $urlRewriteInstalled = Get-ChildItem "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" -ErrorAction SilentlyContinue |
+            Get-ItemProperty | Where-Object { $_.DisplayName -like '*IIS URL Rewrite*' }
+    }
+
+    if ($urlRewriteInstalled) {
+        Write-Log "IIS URL Rewrite Module already installed — skipping"
+    }
+    else {
+        Write-Log "Downloading IIS URL Rewrite Module..."
+        $urlRewriteUrl  = "https://download.microsoft.com/download/1/2/8/128E2E22-C1B9-44A4-BE2A-5859ED1D4592/rewrite_amd64_en-US.msi"
+        $urlRewriteMsi  = Join-Path $env:TEMP "rewrite_amd64_en-US.msi"
+        try {
+            $previousPref = $ProgressPreference
+            $ProgressPreference = 'SilentlyContinue'
+            try {
+                Invoke-WebRequest -Uri $urlRewriteUrl -OutFile $urlRewriteMsi -UseBasicParsing -ErrorAction Stop
+            }
+            finally {
+                $ProgressPreference = $previousPref
+            }
+            Write-Log "Installing IIS URL Rewrite Module..."
+            $proc = Start-Process -FilePath "msiexec.exe" `
+                -ArgumentList "/i `"$urlRewriteMsi`" /quiet /norestart" `
+                -Wait -PassThru
+            if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
+                throw "IIS URL Rewrite Module install failed with exit code $($proc.ExitCode)"
+            }
+            Write-Log "IIS URL Rewrite Module installed (exit code: $($proc.ExitCode))"
+        }
+        catch {
+            Write-Log "ERROR installing IIS URL Rewrite Module: $_" -Level Error
+            throw
+        }
+    }
+
+    # ------------------------------------------------------------------
+    # 3. Install Visual C++ 2013 Redistributable (x64) if not present
     # ------------------------------------------------------------------
     $vc2013Installed = Get-ItemProperty "HKLM:\SOFTWARE\Classes\Installer\Dependencies\{050d4fc8-5d48-4b8f-8972-47c82c46020f}" -ErrorAction SilentlyContinue
     if (-not $vc2013Installed) {
@@ -116,7 +156,7 @@ function Invoke-Phase14-InstallExchangePrereqs {
     }
 
     # ------------------------------------------------------------------
-    # 3. Install UCMA 4.0 Runtime if not present
+    # 4. Install UCMA 4.0 Runtime if not present
     # ------------------------------------------------------------------
     $ucmaInstalled = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\UCMA\{FE3B3F19-5F92-4B3B-8008-6F0C6CA619C5}" -ErrorAction SilentlyContinue
     if (-not $ucmaInstalled) {

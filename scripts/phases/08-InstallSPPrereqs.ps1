@@ -17,6 +17,16 @@ function Invoke-Phase08-InstallSPPrereqs {
 
     Write-Log "===== Phase 08 – Install SharePoint Prerequisites ====="
 
+    # ------------------------------------------------------------------
+    # Idempotency: skip if key prerequisites are already installed
+    # ------------------------------------------------------------------
+    $iisFeature = Get-WindowsFeature -Name Web-Server -ErrorAction SilentlyContinue
+    $wcfFeature = Get-WindowsFeature -Name NET-WCF-HTTP-Activation45 -ErrorAction SilentlyContinue
+    if ($iisFeature -and $iisFeature.Installed -and $wcfFeature -and $wcfFeature.Installed) {
+        Write-Log "SharePoint prerequisites already installed (IIS + WCF present) – skipping"
+        return "success"
+    }
+
     $isoPath = "F:\Installers\$($script:Params.SpIsoFileName)"
 
     # ------------------------------------------------------------------
