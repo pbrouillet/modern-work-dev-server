@@ -92,6 +92,7 @@ $PhaseDefinitions = @(
     @{ Number = 17; Script = "17-InstallVS2026.ps1";           Function = "Invoke-Phase17-InstallVS2026"           }
     @{ Number = 18; Script = "18-FinalConfig.ps1";             Function = "Invoke-Phase18-FinalConfig"             }
     @{ Number = 19; Script = "19-InstallOptionalSoftware.ps1"; Function = "Invoke-Phase19-InstallOptionalSoftware" }
+    @{ Number = 20; Script = "20-FixSPExchangeCoexistence.ps1";Function = "Invoke-Phase20-FixSPExchangeCoexistence"       Condition = { $script:Params.EnableExchange -eq 'True' } }
 )
 
 # ─────────────────────────────────────────────────────────────────────────────

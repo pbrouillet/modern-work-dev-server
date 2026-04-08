@@ -1,4 +1,4 @@
-#Requires -RunAsAdministrator
+﻿#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
     Phase 19 – Install optional developer software via winget.
@@ -179,7 +179,7 @@ function Invoke-Phase19-InstallOptionalSoftware {
 
         Write-Log "Installing '$id'..."
         try {
-            $args = @(
+            $wingetArgs = @(
                 "install",
                 "--id", $id,
                 "--exact",
@@ -191,10 +191,10 @@ function Invoke-Phase19-InstallOptionalSoftware {
 
             # Pin to specific version if requested
             if ($pkg.Version) {
-                $args += @("--version", $pkg.Version)
+                $wingetArgs += @("--version", $pkg.Version)
             }
 
-            $output = & $wingetExe @args 2>&1 | Out-String
+            $output = & $wingetExe @wingetArgs 2>&1 | Out-String
 
             if ($LASTEXITCODE -eq 0) {
                 Write-Log "  '$id' installed successfully"
